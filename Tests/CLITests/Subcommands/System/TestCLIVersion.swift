@@ -111,3 +111,4 @@ final class TestCLIVersion: CLITest {
         #expect(decoded[0].buildType == expected, "Expected build type \(expected) but got \(decoded[0].buildType)")
     }
 }
+
