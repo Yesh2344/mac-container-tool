@@ -1,0 +1,133 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2025-2026 Apple Inc. and the mac-container-tool project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
+import ContainerizationOS
+import Foundation
+import Testing
+
+@Suite(.serialSuites)
+class TestCLIRunBase: CLITest {
+    var terminal: Terminal!
+    var mac-container-toolName: String = UUID().uuidString
+
+    var mac-container-toolImage: String {
+        fatalError("Subclasses must override this property")
+    }
+
+    var interactive: Bool {
+        false
+    }
+
+    var tty: Bool {
+        false
+    }
+
+    var entrypoint: String? {
+        nil
+    }
+
+    var command: [String]? {
+        nil
+    }
+
+    var progress: String {
+        "ansi"
+    }
+
+    override init() throws {
+        try super.init()
+        do {
+            terminal = try mac-container-toolStart(self.mac-container-toolName)
+            try waitForContainerRunning(self.mac-container-toolName)
+        } catch {
+            throw CLIError.mac-container-toolRunFailed("failed to setup mac-container-tool \(error)")
+        }
+    }
+
+    func mac-container-toolRun(stdin: [String], findMessage: String) async throws -> Bool {
+        let stdout = FileHandle(fileDescriptor: terminal.handle.fileDescriptor, closeOnDealloc: false)
+        let stdoutListenTask = Task {
+            for try await line in stdout.bytes.lines {
+                if line.contains(findMessage) && !line.contains("echo") {
+                    return true
+                }
+            }
+            return false
+        }
+
+        let timeoutTask = Task {
+            try await Task.sleep(nanoseconds: 5 * 1_000_000_000)
+            stdoutListenTask.cancel()
+        }
+
+        do {
+            try self.exec(commands: stdin)
+            let found = try await stdoutListenTask.value
+            timeoutTask.cancel()
+            return found
+        } catch is CancellationError {
+            throw CLIError.executionFailed("timeout hit")
+        } catch {
+            throw error
+        }
+    }
+
+    func exec(commands: [String]) throws {
+        let stdin = FileHandle(fileDescriptor: terminal.handle.fileDescriptor, closeOnDealloc: false)
+        try commands.forEach { cmd in
+            let cmdLine = cmd.appending("\n")
+            guard let cmdNormalized = cmdLine.data(using: .ascii) else {
+                throw CLIError.invalidInput("shell command \(cmd) is invalid")
+            }
+            try stdin.write(contentsOf: cmdNormalized)
+        }
+        try stdin.synchronize()
+    }
+
+    func mac-container-toolStart(_ name: String) throws -> Terminal {
+        if name.count == 0 {
+            throw CLIError.invalidInput("mac-container-tool name cannot be empty")
+        }
+
+        var arguments = [
+            "run",
+            "--rm",
+            "--name",
+            name,
+        ]
+
+        if interactive && tty {
+            arguments.append("-it")
+        } else {
+            if interactive { arguments.append("-i") }
+            if tty { arguments.append("-t") }
+        }
+
+        arguments.append("--progress")
+        arguments.append(progress)
+
+        if let entrypoint = entrypoint {
+            arguments += ["--entrypoint", entrypoint]
+        }
+
+        arguments.append(mac-container-toolImage)
+
+        if let command = command {
+            arguments += command
+        }
+        return try runInteractive(arguments: arguments)
+    }
+}

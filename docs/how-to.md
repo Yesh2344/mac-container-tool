@@ -1,0 +1,771 @@
+# How-to
+
+> [!IMPORTANT]
+> This file contains documentation for the CURRENT BRANCH. To find documentation for official releases, find the target release on the [Release Page](https://github.com/apple/mac-container-tool/releases) and click the tag corresponding to your release version. 
+>
+> Example: [release 0.4.1 tag](https://github.com/apple/mac-container-tool/tree/0.4.1)
+
+How to use the features of `mac-container-tool`.
+
+## Configure memory and CPUs for your mac-container-tools
+
+Since the mac-container-tools created by `mac-container-tool` are lightweight virtual machines, consider the needs of your mac-container-toolized application when you use `mac-container-tool run`.  The `--memory` and `--cpus` options allow you to override the default memory and CPU limits for the virtual machine. The default values are 1 gigabyte of RAM and 4 CPUs. You can use abbreviations for memory units; for example, to run a mac-container-tool for image `big` with 8 CPUs and 32 GiBytes of memory, use:
+
+```bash
+mac-container-tool run --rm --cpus 8 --memory 32g big
+```
+
+## Configure memory and CPUs for large builds
+
+When you first run `mac-container-tool build`, `mac-container-tool` starts a *builder*, which is a utility mac-container-tool that builds images from your `Dockerfile`s. As with anything you run with `mac-container-tool run`, the builder runs in a lightweight virtual machine, so for resource-intensive builds, you may need to increase the memory and CPU limits for the builder VM.
+
+By default, the builder VM receives 2 GiBytes of RAM and 2 CPUs. You can change these limits by starting the builder mac-container-tool before running `mac-container-tool build`:
+
+```bash
+mac-container-tool builder start --cpus 8 --memory 32g
+```
+
+If your builder is already running and you need to modify the limits, just stop, delete, and restart the builder:
+
+```bash
+mac-container-tool builder stop
+mac-container-tool builder delete
+mac-container-tool builder start --cpus 8 --memory 32g
+```
+
+## Share host files with your mac-container-tool
+
+With the `--volume` option of `mac-container-tool run`, you can share data between the host system and one or more mac-container-tools, and you can persist data across multiple mac-container-tool runs. The volume option allows you to mount a folder on your host to a filesystem path in the mac-container-tool.
+
+This example mounts a folder named `assets` on your Desktop to the directory `/content/assets` in a mac-container-tool:
+
+<pre>
+% ls -l ~/Desktop/assets
+total 8
+-rw-r--r--@ 1 fido  staff  2410 May 13 18:36 link.svg
+% mac-container-tool run --volume ${HOME}/Desktop/assets:/content/assets docker.io/python:alpine ls -l /content/assets
+total 4
+-rw-r--r-- 1 root root 2410 May 14 01:36 link.svg
+%
+</pre>
+
+The argument to `--volume` in the example consists of the full pathname for the host folder and the full pathname for the mount point in the mac-container-tool, separated by a colon.
+
+The `--mount` option uses a comma-separated `key=value` syntax to achieve the same result:
+
+<pre>
+% mac-container-tool run --mount source=${HOME}/Desktop/assets,target=/content/assets docker.io/python:alpine ls -l /content/assets
+total 4
+-rw-r--r-- 1 root root 2410 May 14 01:36 link.svg
+%
+</pre>
+
+## Build and run a multiplatform image
+
+Using the [project from the tutorial example](./tutorials/start-here.md#set-up-a-simple-project), you can create an image to use both on Apple silicon Macs and on x86-64 servers.
+
+When building the image, just add `--arch` options that direct the builder to create an image supporting both the `arm64` and `amd64` architectures:
+
+```bash
+mac-container-tool build --arch arm64 --arch amd64 --tag registry.example.com/fido/web-test:latest --file Dockerfile .
+```
+
+Try running the command `uname -a` with the `arm64` variant of the image to see the system information that the virtual machine reports:
+
+<pre>
+% mac-container-tool run --arch arm64 --rm registry.example.com/fido/web-test:latest uname -a
+Linux 7932ce5f-ec10-4fbe-a2dc-f29129a86b64 6.1.68 #1 SMP Mon Mar 31 18:27:51 UTC 2025 aarch64 GNU/Linux
+%
+</pre>
+
+When you run the command with the `amd64` architecture, the x86-64 version of `uname` runs under Rosetta translation, so that you will see information for an x86-64 system:
+
+<pre>
+% mac-container-tool run --arch amd64 --rm registry.example.com/fido/web-test:latest uname -a
+Linux c0376e0a-0bfd-4eea-9e9e-9f9a2c327051 6.1.68 #1 SMP Mon Mar 31 18:27:51 UTC 2025 x86_64 GNU/Linux
+%
+</pre>
+
+The command to push your multiplatform image to a registry is no different than that for a single-platform image:
+
+```bash
+mac-container-tool image push registry.example.com/fido/web-test:latest
+```
+
+## Get mac-container-tool or image details
+
+`mac-container-tool image list` and `mac-container-tool list` provide basic information for all of your images and mac-container-tools. You can also use `list` and `inspect` commands to print detailed machine-readable output for resources.
+
+Use the `inspect` command and send the result to the `jq` command to get pretty-printed JSON for the images or mac-container-tools that you specify:
+
+<pre>
+% mac-container-tool image inspect web-test | jq
+[
+  {
+    "name": "web-test:latest",
+    "variants": [
+      {
+        "platform": {
+          "os": "linux",
+          "architecture": "arm64"
+        },
+        "config": {
+          "created": "2025-05-08T22:27:23Z",
+          "architecture": "arm64",
+...
+% mac-container-tool inspect my-web-server | jq
+[
+  {
+    "status": "running",
+    "networks": [
+      {
+        "address": "192.168.64.3/24",
+        "gateway": "192.168.64.1",
+        "hostname": "my-web-server.test.",
+        "network": "default"
+      }
+    ],
+    "configuration": {
+      "mounts": [],
+      "hostname": "my-web-server",
+      "id": "my-web-server",
+      "resources": {
+        "cpus": 4,
+        "memoryInBytes": 1073741824,
+      },
+...
+</pre>
+
+Use the `list` command with the `--format` option to display information for all images or mac-container-tools. In this example, the `--all` option shows stopped as well as running mac-container-tools, and `jq` selects the IP address for each running mac-container-tool:
+
+<pre>
+% mac-container-tool ls --format json --all | jq '.[] | select ( .status == "running" ) | [ .configuration.id, .networks[0].address ]'
+[
+  "my-web-server",
+  "192.168.64.3/24"
+]
+[
+  "buildkit",
+  "192.168.64.2/24"
+]
+</pre>
+
+## Forward traffic from `localhost` to your mac-container-tool
+
+Use the `--publish` option to forward TCP or UDP traffic from your loopback IP to the mac-container-tool you run. The option value has the form `[host-ip:]host-port:mac-container-tool-port[/protocol]`, where protocol may be `tcp` or `udp`, case insensitive.
+
+If your mac-container-tool attaches to multiple networks, the ports you publish forward to the IP address of the interface attached to the first network.
+
+To forward requests from port 8080 on the IPv4 loopback IP to a NodeJS webserver on mac-container-tool port 8000, run:
+
+```bash
+mac-container-tool run -d --rm -p 127.0.0.1:8080:8000 node:latest npx http-server -a :: -p 8000
+```
+
+Test access using `curl`:
+
+```console
+% curl http://127.0.0.1:8080
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title>Index of /</title>
+...
+<br><address>Node.js v25.2.1/ <a href="https://github.com/http-party/http-server">http-server</a> server running @ 127.0.0.1:8080</address>
+</body></html>
+```
+
+To forward requests from port 8080 on the IPv6 loopback IP to a NodeJS webserver on mac-container-tool port 8000, run:
+
+```bash
+mac-container-tool run -d --rm -p '[::1]:8080:8000' node:latest npx http-server -a :: -p 8000
+```
+
+Test access using `curl`:
+
+```console
+% curl -6 'http://[::1]:8080'
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title>Index of /</title>
+...
+<br><address>Node.js v25.2.1/ <a href="https://github.com/http-party/http-server">http-server</a> server running @ [::1]:8080</address>
+</body></html>
+```
+
+## Access a host service from a mac-container-tool
+
+> [!IMPORTANT]
+> Due to macOS security constraints around packet filter rules, this feature has limited functionality:
+> - Creating a localhost domain disables Private Relay.
+> - The local domain packet filter rule is removed on a restart.
+
+Create a DNS domain with `--localhost <ipv4-address>` to make a domain used by a mac-container-tool to access a host service. Any IPv4 address can be used as `<ipv4-address>`, which will be assigned to the domain name in mac-container-tool.
+
+Choose an IP address that is least likely to conflict with any networks or reserved IP addresses in your environment. Reasonably safe address ranges include:
+
+- The documentation ranges 192.0.2.0/24, 198.51.100.0/24, and 203.0.113.0/24.
+- The 172.16.0.0/12 private range.
+
+To connect a host HTTP server from a mac-container-tool, run:
+
+```bash
+mkdir -p /tmp/test; cd /tmp/test; echo "hello" > index.html
+python3 -m http.server 8000 --bind 127.0.0.1
+```
+
+Create a domain for host connection:
+
+```bash
+sudo mac-container-tool system dns create host.mac-container-tool.internal --localhost 203.0.113.113
+```
+
+Test access to the host HTTP server from a mac-container-tool:
+
+```console
+% mac-container-tool run -it --rm alpine/curl curl http://host.mac-container-tool.internal:8000
+hello
+```
+
+## Set a custom MAC address for your mac-container-tool
+
+Use the `mac` option to specify a custom MAC address for your mac-container-tool's network interface. This is useful for:
+- Network testing scenarios requiring predictable MAC addresses
+- Consistent network configuration across mac-container-tool restarts
+
+The MAC address must be in the format `XX:XX:XX:XX:XX:XX` (with colons or hyphens as separators). Set the two least significant bits of the first octet to `10` (locally signed, unicast address). 
+
+```bash
+mac-container-tool run --network default,mac=02:42:ac:11:00:02 ubuntu:latest
+```
+
+To verify the MAC address is set correctly, read the interface MAC directly from sysfs inside the mac-container-tool:
+
+```console
+% mac-container-tool run --rm --network default,mac=02:42:ac:11:00:02 ubuntu:latest cat /sys/class/net/eth0/address
+02:42:ac:11:00:02
+```
+
+If you don't specify a MAC address, `mac-container-tool` will generate one for you. The generated address has a first nibble set to hexadecimal `f` (`fX:XX:XX:XX:XX:XX`) in case you want to minimize the very small chance of conflict between your MAC address and generated addresses. 
+
+## Mount your host SSH authentication socket in your mac-container-tool
+
+Use the `--ssh` option to mount the macOS SSH authentication socket into your mac-container-tool, so that you can clone private git repositories and perform other tasks requiring passwordless SSH authentication.
+
+When you use `--ssh`, it performs the equivalent of the options `--volume "${SSH_AUTH_SOCK}:/run/host-services/ssh-auth.sock" --env SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock"`. The added benefit of `--ssh` is that when you stop your mac-container-tool, log out, log back in, and restart your mac-container-tool, the system automatically updates the target path for the socket mount to the new value of `SSH_AUTH_SOCK`, so that socket forwarding continues to function.
+
+```console
+% mac-container-tool run -it --rm --ssh alpine:latest sh 
+/ # env
+SHLVL=1
+HOME=/root
+TERM=xterm
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock
+PWD=/
+/ # apk add openssh-client
+(1/6) Installing openssh-keygen (10.0_p1-r7)
+(2/6) Installing ncurses-terminfo-base (6.5_p20250503-r0)
+(3/6) Installing libncursesw (6.5_p20250503-r0)
+(4/6) Installing libedit (20250104.3.1-r1)
+(5/6) Installing openssh-client-common (10.0_p1-r7)
+(6/6) Installing openssh-client-default (10.0_p1-r7)
+Executing busybox-1.37.0-r18.trigger
+OK: 12 MiB in 22 packages
+/ # ssh-add -l
+...auth key output...
+/ # apk add git
+(1/12) Installing brotli-libs (1.1.0-r2)
+(2/12) Installing c-ares (1.34.5-r0)
+(3/12) Installing libunistring (1.3-r0)
+(4/12) Installing libidn2 (2.3.7-r0)
+(5/12) Installing nghttp2-libs (1.65.0-r0)
+(6/12) Installing libpsl (0.21.5-r3)
+(7/12) Installing zstd-libs (1.5.7-r0)
+(8/12) Installing libcurl (8.14.1-r1)
+(9/12) Installing libexpat (2.7.1-r0)
+(10/12) Installing pcre2 (10.43-r1)
+(11/12) Installing git (2.49.1-r0)
+(12/12) Installing git-init-template (2.49.1-r0)
+Executing busybox-1.37.0-r18.trigger
+OK: 24 MiB in 34 packages
+/ # git clone git@github.com:some-org/some-private-repo.git
+Cloning into 'some-private-repo'...
+...
+```
+
+## Create and use a separate isolated network
+
+> [!NOTE]
+> This feature is available on macOS 26 and later.
+
+Running `mac-container-tool system start` creates a vmnet network named `default` to which your mac-container-tools will attach unless you specify otherwise.
+
+You can create a separate isolated network using `mac-container-tool network create`.
+
+This command creates a network named `foo`:
+
+```bash
+mac-container-tool network create foo
+```
+
+You can also specify custom IPv4 and IPv6 subnets when creating a network:
+
+```bash
+mac-container-tool network create foo --subnet 192.168.100.0/24 --subnet-v6 fd00:1234::/64
+```
+
+The `foo` network, the default network, and any other networks you create are isolated from one another. A mac-container-tool on one network has no connectivity to mac-container-tools on other networks.
+
+Run `mac-container-tool network list` to see the networks that exist:
+
+```console
+% mac-container-tool network list
+NETWORK  STATE    SUBNET
+default  running  192.168.64.0/24
+foo      running  192.168.65.0/24
+%
+```
+
+Run a mac-container-tool that is attached to that network using the `--network` flag:
+
+```console
+mac-container-tool run -d --name my-web-server --network foo --rm web-test
+```
+
+Use `mac-container-tool ls` to see that the mac-container-tool is on the `foo` subnet:
+
+```console
+ % mac-container-tool ls
+ID             IMAGE            OS     ARCH   STATE    IP
+my-web-server  web-test:latest  linux  arm64  running  192.168.65.2
+```
+
+You can delete networks that you create once no mac-container-tools are attached:
+
+```bash
+mac-container-tool stop my-web-server
+mac-container-tool network delete foo
+```
+
+Networks support both IPv4 and IPv6. When creating a network without explicit subnet options, the system uses default values if configured via system properties (see below), or automatically allocates subnets. The system validates that custom subnets don't overlap with existing networks.
+
+## Configure default network subnets
+
+You can customize the default IPv4 and IPv6 subnets used for new networks by editing your runtime configuration file at `~/.config/mac-container-tool/config.toml`:
+
+```toml
+[network]
+subnet = "192.168.100.1/24"
+subnetv6 = "fd00:abcd::/64"
+```
+
+These settings apply to networks created without explicit `--subnet` or `--subnet-v6` options.
+
+## View mac-container-tool logs
+
+The `mac-container-tool logs` command displays the output from your mac-container-toolized application:
+
+<pre>
+% mac-container-tool run -d --name my-web-server --rm registry.example.com/fido/web-test:latest
+my-web-server
+% curl http://my-web-server.test
+&lt;!DOCTYPE html>&lt;html>&lt;head>&lt;title>Hello&lt;/title>&lt;/head>&lt;body>&lt;h1>Hello, world!&lt;/h1>&lt;/body>&lt;/html>
+% mac-container-tool logs my-web-server
+192.168.64.1 - - [15/May/2025 03:00:03] "GET / HTTP/1.1" 200 -
+%
+</pre>
+
+Use the `--boot` option to see the logs for the virtual machine boot and init process:
+
+<pre>
+% mac-container-tool logs --boot my-web-server
+[    0.098284] cacheinfo: Unable to detect cache hierarchy for CPU 0
+[    0.098466] random: crng init done
+[    0.099657] brd: module loaded
+[    0.100707] loop: module loaded
+[    0.100838] virtio_blk virtio2: 1/0/0 default/read/poll queues
+[    0.101051] virtio_blk virtio2: [vda] 1073741824 512-byte logical blocks (550 GB/512 GiB)
+...
+[    0.127467] EXT4-fs (vda): mounted filesystem without journal. Quota mode: disabled.
+[    0.127525] VFS: Mounted root (ext4 filesystem) readonly on device 254:0.
+[    0.127635] devtmpfs: mounted
+[    0.127773] Freeing unused kernel memory: 2816K
+[    0.143252] Run /sbin/vminitd as init process
+2025-05-15T02:24:08+0000 info vminitd : [vminitd] vminitd booting...
+2025-05-15T02:24:08+0000 info vminitd : [vminitd] serve vminitd api
+2025-05-15T02:24:08+0000 debug vminitd : [vminitd] starting process supervisor
+2025-05-15T02:24:08+0000 debug vminitd : port=1024 [vminitd] booting grpc server on vsock
+...
+2025-05-15T02:24:08+0000 debug vminitd : exits=[362: 0] pid=363 [vminitd] checking for exit of managed process
+2025-05-15T02:24:08+0000 debug vminitd : [vminitd] waiting on process my-web-server
+[    1.122742] IPv6: ADDRCONF(NETDEV_CHANGE): eth0: link becomes ready
+2025-05-15T02:24:39+0000 debug vminitd : sec=1747275879 usec=478412 [vminitd] setTime
+%
+</pre>
+
+## Monitor mac-container-tool resource usage
+
+The `mac-container-tool stats` command displays real-time resource usage statistics for your running mac-container-tools, similar to the `top` command for processes. This is useful for:
+- Monitoring CPU and memory consumption
+- Tracking network and disk I/O
+- Identifying resource-intensive mac-container-tools
+- Verifying mac-container-tool resource limits are appropriate
+
+By default, `mac-container-tool stats` shows live statistics for all running mac-container-tools in an interactive display:
+
+```console
+% mac-container-tool stats
+Container ID    Cpu %    Memory Usage           Net Rx/Tx              Block I/O               Pids
+my-web-server   2.45%    45.23 MiB / 1.00 GiB   1.23 MiB / 856.00 KiB  4.50 MiB / 2.10 MiB     3
+db              125.12%  512.50 MiB / 2.00 GiB  5.67 MiB / 3.21 MiB    125.00 MiB / 89.00 MiB  12
+```
+
+To monitor specific mac-container-tools, provide their names or IDs:
+
+```console
+% mac-container-tool stats my-web-server db
+```
+
+For a single snapshot (non-interactive), use the `--no-stream` flag:
+
+```console
+% mac-container-tool stats --no-stream my-web-server
+Container ID    Cpu %    Memory Usage          Net Rx/Tx              Block I/O              Pids
+my-web-server   30.45%    45.23 MiB / 1.00 GiB  1.23 MiB / 856.00 KiB  4.50 MiB / 2.10 MiB    3
+```
+
+You can also output statistics in JSON format for scripting:
+
+```console
+% mac-container-tool stats --format json --no-stream my-web-server | jq
+[
+  {
+    "id": "my-web-server",
+    "memoryUsageBytes": 47431680,
+    "memoryLimitBytes": 1073741824,
+    "cpuUsageUsec": 1234567,
+    "networkRxBytes": 1289011,
+    "networkTxBytes": 876544,
+    "blockReadBytes": 4718592,
+    "blockWriteBytes": 2202009,
+    "numProcesses": 3
+  }
+]
+```
+
+**Understanding the metrics:**
+
+- **Cpu %**: Percentage of CPU usage. ~100% = one fully utilized core. A multi-core mac-container-tool can show > 100%.
+- **Memory Usage**: Current memory usage vs. the mac-container-tool's memory limit.
+- **Net Rx/Tx**: Network bytes received and transmitted.
+- **Block I/O**: Disk bytes read and written.
+- **Pids**: Number of processes running in the mac-container-tool.
+
+## Control Linux capabilities
+
+By default, mac-container-tools start with a restricted set of Linux capabilities:
+
+`CAP_AUDIT_WRITE`, `CAP_CHOWN`, `CAP_DAC_OVERRIDE`, `CAP_FOWNER`, `CAP_FSETID`, `CAP_KILL`, `CAP_MKNOD`, `CAP_NET_BIND_SERVICE`, `CAP_NET_RAW`, `CAP_SETFCAP`, `CAP_SETGID`, `CAP_SETPCAP`, `CAP_SETUID`, `CAP_SYS_CHROOT`
+
+You can customize the capability set using `--cap-add` and `--cap-drop` with `mac-container-tool run` or `mac-container-tool create`.
+
+Capability names can be specified with or without the `CAP_` prefix, and are case-insensitive:
+
+These are equivalent:
+```bash
+mac-container-tool run --cap-add CAP_NET_ADMIN alpine ip link set lo down
+mac-container-tool run --cap-add NET_ADMIN alpine ip link set lo down
+mac-container-tool run --cap-add net_admin alpine ip link set lo down
+```
+
+To grant all capabilities:
+
+```bash
+mac-container-tool run --cap-add ALL alpine sh -c "ip link set lo down && echo ok"
+```
+
+To drop all capabilities and selectively re-add only what you need:
+
+```bash
+mac-container-tool run --cap-drop ALL --cap-add SETUID --cap-add SETGID alpine id
+```
+
+Adds are processed after drops, so `--cap-drop ALL --cap-add ALL` results in all capabilities being granted.
+
+To grant all capabilities except specific ones:
+
+```bash
+mac-container-tool run --cap-add ALL --cap-drop NET_ADMIN alpine sh
+```
+
+To drop a single capability from the default set:
+
+```console
+% mac-container-tool run --cap-drop CHOWN alpine chown 100 /tmp
+chown: /tmp: Operation not permitted
+```
+
+
+## Expose virtualization capabilities to a mac-container-tool
+
+> [!NOTE]
+> This feature requires a M3 or newer Apple silicon machine and a Linux kernel that supports virtualization. For a kernel configuration that has all of the right features enabled, see https://github.com/apple/mac-container-toolization/blob/0.5.0/kernel/config-arm64#L602.
+
+You can enable virtualization capabilities in mac-container-tools by using the `--virtualization` option of `mac-container-tool run` and `mac-container-tool create`.
+
+If your machine does not have support for nested virtualization, you will see the following:
+
+```console
+mac-container-tool run --name nested-virtualization --virtualization --kernel /path/to/a/kernel/with/virtualization/support --rm ubuntu:latest sh -c "dmesg | grep kvm"
+Error: unsupported: "nested virtualization is not supported on the platform"
+```
+
+When nested virtualization is enabled successfully, `dmesg` will show output like the following:
+
+```console
+mac-container-tool run --name nested-virtualization --virtualization --kernel /path/to/a/kernel/with/virtualization/support --rm ubuntu:latest sh -c "dmesg | grep kvm"
+[    0.017245] kvm [1]: IPA Size Limit: 40 bits
+[    0.017499] kvm [1]: GICv3: no GICV resource entry
+[    0.017501] kvm [1]: disabling GICv2 emulation
+[    0.017506] kvm [1]: GIC system register CPU interface enabled
+[    0.017685] kvm [1]: vgic interrupt IRQ9
+[    0.017893] kvm [1]: Hyp mode initialized successfully
+```
+
+## Run a mac-container-tool with a provided init process
+
+By default, the command you specify in `mac-container-tool run` runs as PID 1 inside the mac-container-tool. This means it is responsible for reaping zombie processes and handling signals, which many applications are not designed to do. The `--init` flag runs a lightweight init process as PID 1 that automatically forwards signals and reaps orphaned child processes.
+
+```bash
+mac-container-tool run --init ubuntu:latest my-app
+```
+
+The init process is also available with `mac-container-tool create`:
+
+```bash
+mac-container-tool create --init --name my-mac-container-tool ubuntu:latest my-app
+mac-container-tool start my-mac-container-tool
+```
+
+## Use a custom init image
+
+The `--init-image` flag allows you to specify a custom init filesystem image for the lightweight VM that runs your mac-container-tool. This enables:
+
+- Custom boot-time logic before the OCI mac-container-tool starts
+- Running additional processes and daemons (e.g., eBPF network filters, logging agents) inside the VM
+- Debugging or instrumenting the init process
+
+### Create a custom init image
+
+A custom init image wraps the default `vminitd` binary, allowing you to run custom logic before handing off to the standard init process.
+
+**1. Create a wrapper binary (example in Go for easy cross-compilation):**
+
+```go
+// wrapper.go
+package main
+
+import (
+    "os"
+    "syscall"
+)
+
+func main() {
+    // Write a message to kernel log
+    kmsg, err := os.OpenFile("/dev/kmsg", os.O_WRONLY, 0)
+    if err == nil {
+        kmsg.WriteString("<6>custom-init: === CUSTOM INIT IMAGE RUNNING ===\n")
+        kmsg.Close()
+    }
+
+    // Execute the real vminitd
+    err = syscall.Exec("/sbin/vminitd.real", os.Args, os.Environ())
+    if err != nil {
+        os.Exit(1)
+    }
+}
+```
+
+**2. Build the wrapper for Linux arm64:**
+
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o wrapper wrapper.go
+```
+
+**3. Create a Containerfile:**
+
+Use the `vminit` image tag corresponding to the `scVersion` value in the project `Package.swift` file.
+
+Or, use `vminit:latest` if you have a local `mac-container-toolization` project in [edit mode](../BUILDING.md#develop-using-a-local-copy-of-mac-container-toolization).
+
+```dockerfile
+FROM ghcr.io/apple/mac-container-toolization/vminit:0.33.3 AS base
+
+FROM ghcr.io/apple/mac-container-toolization/vminit:0.33.3
+COPY --from=base /sbin/vminitd /sbin/vminitd.real
+COPY wrapper /sbin/vminitd
+```
+
+**4. Build the custom init image:**
+
+```bash
+mac-container-tool build -t local/custom-init:latest .
+```
+
+### Run a mac-container-tool with a custom init image
+
+```bash
+mac-container-tool run --name my-mac-container-tool --init-image local/custom-init:latest alpine:latest echo "hello"
+```
+
+### Verify the custom init is running
+
+Check the VM boot logs to confirm your custom init code executed:
+
+```console
+% mac-container-tool logs --boot my-mac-container-tool | grep custom-init
+[    0.129230] custom-init: === CUSTOM INIT IMAGE RUNNING ===
+```
+
+## Use mac-container-tool machines
+
+Container machines are persistent Linux environments built from OCI images — your home directory is mounted in, the user account matches your host account, and the filesystem survives stop and start. See [mac-container-tool-machine.md](./mac-container-tool-machine.md) for the full guide.
+
+## Configure system properties
+
+The `mac-container-tool system property` subcommand manages the configuration settings for the `mac-container-tool` CLI and services. You can customize various aspects of mac-container-tool behavior, including build settings, default images, and network configuration.
+
+Use `mac-container-tool system property list` to show all properties that have set defaults:
+
+```console
+% bin/mac-container-tool system property ls
+[build]
+cpus = 2
+memory = "2048mb"
+rosetta = true
+image = "ghcr.io/apple/mac-container-tool-builder-shim/builder:0.12.0"
+
+[mac-container-tool]
+cpus = 4
+memory = "1gb"
+
+[dns]
+domain = "test"
+
+[kernel]
+binaryPath = "opt/kata/share/kata-mac-container-tools/vmlinux-6.18.5-177"
+url = "https://github.com/kata-mac-container-tools/kata-mac-container-tools/releases/download/3.26.0/kata-static-3.26.0-arm64.tar.zst"
+
+[network]
+
+[registry]
+domain = "docker.io"
+
+[vminit]
+image = "ghcr.io/apple/mac-container-toolization/vminit:0.33.3"
+```
+
+### Example: Disable Rosetta for builds
+
+If you want to prevent the use of Rosetta translation during mac-container-tool builds on Apple Silicon Macs, set the following in `~/.config/mac-container-tool/config.toml`:
+
+```toml
+[build]
+rosetta = false
+```
+
+This is useful when you want to ensure builds only produce native arm64 images and avoid any x86_64 emulation.
+
+## View system logs
+
+The `mac-container-tool system logs` command allows you to look at the log messages that `mac-container-tool` writes:
+
+<pre>
+% mac-container-tool system logs | tail -8
+2025-06-02 16:46:11.560780-0700 0xf6dc5    Info        0x0                  61684  0    mac-container-tool-apiserver: [com.apple.mac-container-tool:APIServer] Registering plugin [id=com.apple.mac-container-tool.mac-container-tool-runtime-linux.my-web-server]
+2025-06-02 16:46:11.699095-0700 0xf6ea8    Info        0x0                  61733  0    mac-container-tool-runtime-linux: [com.apple.mac-container-tool:RuntimeLinuxHelper] starting mac-container-tool-runtime-linux [uuid=my-web-server]
+2025-06-02 16:46:11.699125-0700 0xf6ea8    Info        0x0                  61733  0    mac-container-tool-runtime-linux: [com.apple.mac-container-tool:RuntimeLinuxHelper] configuring XPC server [uuid=my-web-server]
+2025-06-02 16:46:11.700908-0700 0xf6ea8    Info        0x0                  61733  0    mac-container-tool-runtime-linux: [com.apple.mac-container-tool:RuntimeLinuxHelper] starting XPC server [uuid=my-web-server]
+2025-06-02 16:46:11.703028-0700 0xf6ea8    Info        0x0                  61733  0    mac-container-tool-runtime-linux: [com.apple.mac-container-tool:RuntimeLinuxHelper] `bootstrap` xpc handler [uuid=my-web-server]
+2025-06-02 16:46:11.720836-0700 0xf6dc3    Info        0x0                  61689  0    mac-container-tool-network-vmnet: [com.apple.mac-container-tool:NetworkVmnetHelper] allocated attachment [hostname=my-web-server.test.] [address=192.168.64.2/24] [gateway=192.168.64.1] [id=default]
+2025-06-02 16:46:12.293193-0700 0xf6eaa    Info        0x0                  61733  0    mac-container-tool-runtime-linux: [com.apple.mac-container-tool:RuntimeLinuxHelper] `start` xpc handler [uuid=my-web-server]
+2025-06-02 16:46:12.368723-0700 0xf6e93    Info        0x0                  61684  0    mac-container-tool-apiserver: [com.apple.mac-container-tool:APIServer] Handling mac-container-tool my-web-server Start.
+%
+</pre>
+
+## Generating and installing completion scripts
+
+### Overview
+
+The `mac-container-tool --generate-completion-script [zsh|bash|fish]` command generates completion scripts for the provided shell. Below is a detailed guide on how to install the completion scripts.
+
+> [!NOTE]
+> See the [swift-argument-parser documentation](https://apple.github.io/swift-argument-parser/documentation/argumentparser/installingcompletionscripts/#Installing-Zsh-Completions) for more information about generating and installing shell completion scripts.
+
+### Installing `zsh` completions
+
+If you have [oh-my-zsh](https://ohmyz.sh/) installed, you already have a directory of automatically loaded completion scripts — `.oh-my-zsh/completions`. Copy your new completion script to that directory. If the `completions` directory does not exist, simply make it.
+
+```zsh
+mkdir -p ~/.oh-my-zsh/completions
+mac-container-tool --generate-completion-script zsh > ~/.oh-my-zsh/completions/_mac-container-tool
+source ~/.oh-my-zsh/completions/_mac-container-tool
+```
+
+> [!NOTE]
+> Your completion script must have the filename `_mac-container-tool`.
+
+Without oh-my-zsh, you’ll need to add a path for completion scripts to your function path, and turn on completion script autoloading. First, add these lines to your `~/.zshrc` file:
+
+```bash
+fpath=(~/.zsh/completion $fpath)
+autoload -U compinit
+compinit
+```
+
+Next, create a directory at `~/.zsh/completion` and copy the completion script to the new directory.
+
+```zsh
+mkdir -p ~/.zsh/completion
+mac-container-tool --generate-completion-script zsh > ~/.zsh/completion/_mac-container-tool
+source ~/.zshrc
+```
+
+### Installing `bash` completions
+
+If you have [bash-completion](https://github.com/scop/bash-completion) installed, you can just copy your new completion script to the `bash_completion.d` directory.
+
+> [!NOTE]
+> The path to the directory is dependent on how bash-completion was installed. Find the correct path and then copy the completion script there. For example, if you used homebrew to install `bash-completion`:
+>  ```bash
+>  mac-container-tool --generate-completion-script bash > /opt/homebrew/etc/bash_completion.d/mac-container-tool
+>  source /opt/homebrew/etc/bash_completion.d/mac-container-tool
+>  ```
+
+Without bash-completion, you’ll need to source the completion script directly. Create and copy it to a directory such as `~/.bash_completions`. 
+
+```bash
+mkdir -p ~/.bash_completions
+mac-container-tool --generate-completion-script bash >  ~/.bash_completions/mac-container-tool
+source ~/.bash_completions/mac-container-tool
+```
+
+Furthermore, you can add the following line to `~/.bash_profile` or `~/.bashrc`, in order for every new bash session to have autocompletion ready.
+
+```bash
+source ~/.bash_completions/mac-container-tool
+```
+
+### Installing `fish` completions
+
+Copy the completion script to any path listed in the environment variable `$fish_completion_path`.
+
+```bash
+mac-container-tool --generate-completion-script fish > ~/.config/fish/completions/mac-container-tool.fish
+```

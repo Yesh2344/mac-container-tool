@@ -1,0 +1,219 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2025-2026 Apple Inc. and the mac-container-tool project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
+import ArgumentParser
+import ContainerAPIClient
+import ContainerPersistence
+import ContainerPlugin
+import ContainerXPC
+import ContainerizationError
+import Foundation
+import MachineAPIClient
+import SystemPackage
+import TerminalProgress
+
+extension Application {
+    public struct SystemStart: AsyncLoggableCommand {
+        public static let configuration = CommandConfiguration(
+            commandName: "start",
+            abstract: "Start `mac-container-tool` services"
+        )
+
+        @Option(
+            name: .shortAndLong,
+            help: "Path to the root directory for application data",
+            transform: { FilePath(FileManager.default.currentDirectoryPath).resolve($0, defaultPath: FilePath($0)) })
+        var appRoot = ApplicationRoot.defaultPath
+
+        @Option(
+            name: .long,
+            help: "Path to the root directory for application executables and plugins",
+            transform: { FilePath(FileManager.default.currentDirectoryPath).resolve($0, defaultPath: FilePath($0)) })
+        var installRoot = InstallRoot.defaultPath
+
+        @Option(
+            name: .long,
+            help: "Path to the root directory for log data, using macOS log facility if not set",
+            transform: { FilePath(FileManager.default.currentDirectoryPath).resolve($0, defaultPath: FilePath($0)) })
+        var logRoot: FilePath? = nil
+
+        @Flag(
+            name: .long,
+            inversion: .prefixedEnableDisable,
+            help: "Specify whether the default kernel should be installed or not (default: prompt user)")
+        var kernelInstall: Bool?
+
+        @Option(
+            help: "Number of seconds to wait for API service to become responsive",
+            transform: {
+                guard let timeoutSeconds = Double($0) else {
+                    throw ValidationError("Invalid timeout value: \($0)")
+                }
+                return .seconds(timeoutSeconds)
+            }
+        )
+        var timeout: Duration = XPCClient.xpcRegistrationTimeout
+
+        @OptionGroup
+        public var logOptions: Flags.Logging
+
+        public init() {}
+
+        public func run() async throws {
+            try ConfigurationLoader.copyConfigurationToReadOnly(to: appRoot)
+            // Pass appRoot before installRoot: ConfigurationLoader uses first-match-wins
+            // precedence, so user-provided config in appRoot overrides the defaults
+            // shipped under installRoot. Both layers are passed explicitly because
+            // users can override --app-root and --install-root from the CLI, and the
+            // loader's default search would otherwise ignore those overrides.
+            let mac-container-toolSystemConfig: ContainerSystemConfig = try await ConfigurationLoader.load(
+                configurationFiles: [
+                    ConfigurationLoader.configurationFile(in: appRoot, of: .appRoot),
+                    ConfigurationLoader.configurationFile(in: installRoot, of: .installRoot),
+                ])
+
+            // Without the true path to the binary in the plist, `mac-container-tool-apiserver` won't launch properly.
+            // Resolve the symlink to get the true binary path before writing the launchd plist.
+            // Gatekeeper / amfid validates code signatures relative to the enclosing .app bundle
+            // hierarchy; launching via a symlink outside the bundle fails that check.
+            // TODO: Can we use the plugin loader to bootstrap the API server?
+            let executablePath = try CommandLine.executablePath
+                .removingLastComponent()
+                .appending(FilePath.Component("mac-container-tool-apiserver"))
+                .resolvingSymlinks()
+
+            var args = [executablePath.string]
+
+            args.append("start")
+            if logOptions.debug {
+                args.append("--debug")
+            }
+
+            let apiServerDataPath = appRoot.appending(FilePath.Component("apiserver"))
+            let apiServerDataURL = URL(fileURLWithPath: apiServerDataPath.string)
+            try! FileManager.default.createDirectory(at: apiServerDataURL, withIntermediateDirectories: true)
+
+            var env = PluginLoader.filterEnvironment()
+            env[ApplicationRoot.environmentName] = appRoot.string
+            env[InstallRoot.environmentName] = installRoot.string
+            if let logRoot {
+                env[LogRoot.environmentName] = logRoot.string
+            }
+            let plist = LaunchPlist(
+                label: "com.apple.mac-container-tool.apiserver",
+                arguments: args,
+                environment: env,
+                limitLoadToSessionType: [.Aqua, .Background, .System],
+                runAtLoad: true,
+                machServices: ["com.apple.mac-container-tool.apiserver"]
+            )
+
+            let plistPath = apiServerDataPath.appending(FilePath.Component("apiserver.plist"))
+            let plistURL = URL(fileURLWithPath: plistPath.string)
+            let data = try plist.encode()
+            try data.write(to: plistURL)
+
+            log.info("Launching mac-container-tool-apiserver...")
+            try ServiceManager.register(plistPath: plistURL.path)
+
+            // Now ping our friendly daemon. Fail if we don't get a response.
+            do {
+                log.info("Testing access to mac-container-tool-apiserver...")
+                _ = try await ClientHealthCheck.ping(timeout: timeout)
+            } catch {
+                throw ContainerizationError(
+                    .internalError,
+                    message: "failed to get a response from apiserver: \(error)"
+                )
+            }
+
+            do {
+                print("Verifying machine API server is running...")
+                _ = try await MachineClient().list()
+            } catch {
+                throw ContainerizationError(
+                    .internalError,
+                    message: "failed to get a response from machine API server: \(error)"
+                )
+            }
+
+            if await !initImageExists(mac-container-toolSystemConfig: mac-container-toolSystemConfig) {
+                try? await installInitialFilesystem(initImage: mac-container-toolSystemConfig.vminit.image)
+            }
+
+            guard await !kernelExists() else {
+                return
+            }
+            try await installDefaultKernel(kernelURL: mac-container-toolSystemConfig.kernel.url, kernelBinaryPath: mac-container-toolSystemConfig.kernel.binaryPath)
+        }
+
+        private func installInitialFilesystem(initImage: String) async throws {
+            var pullCommand = try ImagePull.parse()
+            pullCommand.reference = initImage
+            log.info("Installing base mac-container-tool filesystem...")
+            do {
+                try await pullCommand.run()
+            } catch {
+                log.error("failed to install base mac-container-tool filesystem", metadata: ["error": "\(error)"])
+            }
+        }
+
+        private func installDefaultKernel(kernelURL: URL, kernelBinaryPath: String) async throws {
+            var shouldInstallKernel = false
+            if kernelInstall == nil {
+                print("No default kernel configured.")
+                print("Install the recommended default kernel from [\(kernelURL)]? [Y/n]: ", terminator: "")
+                guard let read = readLine(strippingNewline: true) else {
+                    throw ContainerizationError(.internalError, message: "failed to read user input")
+                }
+                guard read.lowercased() == "y" || read.count == 0 else {
+                    log.info("Please use the `mac-container-tool system kernel set --recommended` command to configure the default kernel")
+                    return
+                }
+                shouldInstallKernel = true
+            } else {
+                shouldInstallKernel = kernelInstall ?? false
+            }
+            guard shouldInstallKernel else {
+                return
+            }
+            log.info("Installing kernel...")
+            try await KernelSet.downloadAndInstallWithProgressBar(tarRemoteURL: kernelURL, kernelFilePath: kernelBinaryPath, force: true)
+        }
+
+        private func initImageExists(mac-container-toolSystemConfig: ContainerSystemConfig) async -> Bool {
+            do {
+                let img = try await ClientImage.get(
+                    reference: mac-container-toolSystemConfig.vminit.image,
+                    mac-container-toolSystemConfig: mac-container-toolSystemConfig
+                )
+                let _ = try await img.getSnapshot(platform: .current)
+                return true
+            } catch {
+                return false
+            }
+        }
+
+        private func kernelExists() async -> Bool {
+            do {
+                try await ClientKernel.getDefaultKernel(for: .current)
+                return true
+            } catch {
+                return false
+            }
+        }
+    }
+}

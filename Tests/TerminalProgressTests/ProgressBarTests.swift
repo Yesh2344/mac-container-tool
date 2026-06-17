@@ -1,0 +1,1234 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2025-2026 Apple Inc. and the mac-container-tool project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
+import XCTest
+
+@testable import TerminalProgress
+
+final class ProgressBarTests: XCTestCase {
+    func testSpinner() async throws {
+        let config = try ProgressConfig(
+            description: "Task"
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [0s]")
+    }
+
+    func testSpinnerFinished() async throws {
+        let config = try ProgressConfig(
+            description: "Task"
+        )
+        let progress = ProgressBar(config: config)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "✔ Task [0s]")
+    }
+
+    func testNoSpinner() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSpinner: false
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "Task [0s]")
+    }
+
+    func testNoSpinnerFinished() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSpinner: false
+        )
+        let progress = ProgressBar(config: config)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "Task [0s]")
+    }
+
+    func testNoTasks() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showTasks: false
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [0s]")
+    }
+
+    func testTasks() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showTasks: true
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [0s]")
+    }
+
+    func testTasksAdd() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showTasks: true
+        )
+        let progress = ProgressBar(config: config)
+        progress.add(tasks: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [0s]")
+    }
+
+    func testTasksSet() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showTasks: true
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(tasks: 2)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [0s]")
+    }
+
+    func testTotalTasks() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showTasks: true,
+            totalTasks: 2
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ [0/2] Task [0s]")
+    }
+
+    func testTotalTasksFinished() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showTasks: true,
+            totalTasks: 2
+        )
+        let progress = ProgressBar(config: config)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "✔ [0/2] Task [0s]")
+    }
+
+    func testTotalTasksAdd() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showTasks: true,
+            totalTasks: 1
+        )
+        let progress = ProgressBar(config: config)
+        progress.add(totalTasks: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ [0/2] Task [0s]")
+    }
+
+    func testTotalTasksSet() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showTasks: true,
+            totalTasks: 1
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(totalTasks: 2)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ [0/2] Task [0s]")
+    }
+
+    func testTotalTasksInvalid() throws {
+        do {
+            let _ = try ProgressConfig(description: "test", totalTasks: 0)
+        } catch ProgressConfig.Error.invalid(_) {
+            return
+        }
+        XCTFail("expected ProgressConfig.Error.invalid")
+    }
+
+    func testDescription() async throws {
+        let config = try ProgressConfig(
+            description: "Task"
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [0s]")
+    }
+
+    func testNoDescription() async throws {
+        let config = try ProgressConfig()
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ [0s]")
+    }
+
+    func testNoPercent() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showPercent: false,
+            totalItems: 2
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [0s]")
+    }
+
+    func testPercentHidden() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showPercent: true
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [0s]")
+    }
+
+    func testPercentItems() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showPercent: true,
+            totalItems: 2
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 50% [0s]")
+    }
+
+    func testPercentItemsFinished() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showPercent: true,
+            totalItems: 2
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "✔ Task 100% [0s]")
+    }
+
+    func testPercentSize() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showPercent: true,
+            showSize: false,
+            showSpeed: false,
+            totalSize: 2
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 50% [0s]")
+    }
+
+    func testPercentSizeFinished() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showPercent: true,
+            showSize: false,
+            showSpeed: false,
+            totalSize: 2
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 1)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "✔ Task 100% [0s]")
+    }
+
+    func testNoProgressBar() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showProgressBar: false,
+            totalItems: 2,
+            width: 57
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 50% [0s]")
+    }
+
+    func testProgressBar() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showProgressBar: true,
+            totalItems: 2,
+            width: 57
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "Task 50% |██  | [0s]")
+    }
+
+    func testProgressBarFinished() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showProgressBar: true,
+            totalItems: 2,
+            width: 57
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "Task 100% |███| [0s]")
+    }
+
+    func testProgressBarMinWidth() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showProgressBar: true,
+            totalItems: 2,
+            width: 13
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "Task 50% | | [0s]")
+    }
+
+    func testProgressBarMinWidthFinished() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showProgressBar: true,
+            totalItems: 2,
+            width: 13
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "Task 100% |█| [0s]")
+    }
+
+    func testNoItems() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: false
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [0s]")
+    }
+
+    func testItemsZero() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [0s]")
+    }
+
+    func testItemsAdd() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true
+        )
+        let progress = ProgressBar(config: config)
+        progress.add(items: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task (1 it) [0s]")
+    }
+
+    func testItemsAddFinish() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true
+        )
+        let progress = ProgressBar(config: config)
+        progress.add(items: 1)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "✔ Task [0s]")
+    }
+
+    func testItemsSet() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 2)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task (2 it) [0s]")
+    }
+
+    func testTotalItemsZeroItems() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true,
+            totalItems: 1
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 0% [0s]")
+    }
+
+    func testTotalItems() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true,
+            totalItems: 2
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 50% (1 of 2 it) [0s]")
+    }
+
+    func testTotalItemsFinish() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true,
+            totalItems: 2
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "✔ Task 100% (2 it) [0s]")
+    }
+
+    func testTotalItemsAdd() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true,
+            totalItems: 1
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        progress.add(totalItems: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 50% (1 of 2 it) [0s]")
+    }
+
+    func testTotalItemsSet() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true,
+            totalItems: 1
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        progress.set(totalItems: 2)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 50% (1 of 2 it) [0s]")
+    }
+
+    func testTotalItemsInvalid() throws {
+        do {
+            let _ = try ProgressConfig(description: "test", totalItems: 0)
+        } catch ProgressConfig.Error.invalid(_) {
+            return
+        }
+        XCTFail("expected ProgressConfig.Error.invalid")
+    }
+
+    func testNoSize() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSize: false
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [0s]")
+    }
+
+    func testSizeZero() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSize: true
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [0s]")
+    }
+
+    func testSizeAdd() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSize: true,
+            showSpeed: false
+        )
+        let progress = ProgressBar(config: config)
+        progress.add(size: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task (1 byte) [0s]")
+    }
+
+    func testSizeAddFinish() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSize: true,
+            showSpeed: false
+        )
+        let progress = ProgressBar(config: config)
+        progress.add(size: 1)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "✔ Task [0s]")
+    }
+
+    func testSizeSet() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSize: true,
+            showSpeed: false
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 2)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task (2 bytes) [0s]")
+    }
+
+    func testTotalSizeZeroSize() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSize: true,
+            totalSize: 1
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 0% [0s]")
+    }
+
+    func testTotalSizeDifferentUnits() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSize: true,
+            showSpeed: false,
+            totalSize: 2
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 50% (1 byte/2 bytes) [0s]")
+    }
+
+    func testTotalSizeDifferentUnitsFinish() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSize: true,
+            showSpeed: false,
+            totalSize: 2
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 1)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "✔ Task 100% (2 bytes) [0s]")
+    }
+
+    func testTotalSizeSameUnits() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSize: true,
+            showSpeed: false,
+            totalSize: 4
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 2)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 50% (2/4 bytes) [0s]")
+    }
+
+    func testTotalSizeSameUnitsFinish() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSize: true,
+            showSpeed: false,
+            totalSize: 4
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 2)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "✔ Task 100% (4 bytes) [0s]")
+    }
+
+    func testTotalSizeAdd() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSize: true,
+            showSpeed: false,
+            totalSize: 3
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 2)
+        progress.add(totalSize: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 50% (2/4 bytes) [0s]")
+    }
+
+    func testTotalSizeSet() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSize: true,
+            showSpeed: false,
+            totalSize: 3
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 2)
+        progress.set(totalSize: 4)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 50% (2/4 bytes) [0s]")
+    }
+
+    func testTotalSizeInvalid() throws {
+        do {
+            let _ = try ProgressConfig(description: "test", totalSize: 0)
+        } catch ProgressConfig.Error.invalid(_) {
+            return
+        }
+        XCTFail("expected ProgressConfig.Error.invalid")
+    }
+
+    func testItemsAndSize() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true,
+            showSize: true,
+            showSpeed: false,
+            totalItems: 2,
+            totalSize: 4
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        progress.set(size: 2)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 50% (1 of 2 it, 2/4 bytes) [0s]")
+    }
+
+    func testItemsAndSizeFinish() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true,
+            showSize: true,
+            showSpeed: false,
+            totalItems: 2,
+            totalSize: 4
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        progress.set(size: 2)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "✔ Task 100% (2 it, 4 bytes) [0s]")
+    }
+
+    func testNoSpeed() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSpeed: false,
+            totalSize: 4
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 2)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 50% (2/4 bytes) [0s]")
+    }
+
+    func testSpeed() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSpeed: true,
+            totalSize: 4
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 2)
+        let output = progress.draw()
+        XCTAssertTrue(output.contains("/s"))
+    }
+
+    func testSpeedFinish() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSpeed: true,
+            totalSize: 4
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 2)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertFalse(output.contains("/s"))
+    }
+
+    func testItemsSizeAndSpeed() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true,
+            showSize: true,
+            showSpeed: true,
+            totalItems: 2,
+            totalSize: 4
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        progress.set(size: 2)
+        let output = progress.draw()
+        XCTAssertTrue(output.contains("1 of 2 it, 2/4 bytes"))
+        XCTAssertTrue(output.contains("/s"))
+    }
+
+    func testItemsSizeAndSpeedFinish() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true,
+            showSize: true,
+            showSpeed: true,
+            totalItems: 2,
+            totalSize: 4
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        progress.set(size: 2)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertTrue(output.contains("2 it, 4 bytes"))
+        XCTAssertFalse(output.contains("/s"))
+    }
+
+    func testNoTime() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showTime: false
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task")
+    }
+
+    func testTime() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showTime: true
+        )
+        let progress = ProgressBar(config: config)
+        sleep(1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [1s]")
+    }
+
+    func testIgnoreSmallSize() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            ignoreSmallSize: true,
+            totalSize: 4
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 2)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task [0s]")
+    }
+
+    func testProgressBarSizeExceedsTotal() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showProgressBar: true,
+            totalSize: 50
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 100)
+        let _ = progress.draw()
+    }
+
+    func testProgressBarNegativeValue() async throws {
+        // Regression test: a negative progress value (e.g. from a race in progress events)
+        // must not cause String(repeating:count:) to be called with a negative count.
+        let config = try ProgressConfig(
+            description: "Task",
+            showProgressBar: true,
+            totalSize: 50,
+            width: 57
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: -10)
+        // draw(state:detail:) should clamp barLength to [0, remainingWidth] and not crash.
+        let state = progress.state.withLock { $0 }
+        let _ = progress.draw(state: state, detail: .full)
+    }
+
+    func testItemsName() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            itemsName: "files",
+            showItems: true,
+            totalItems: 2
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "⠋ Task 50% (1 of 2 files) [0s]")
+    }
+
+    func testPlainModeConfig() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSpinner: false,
+            outputMode: .plain
+        )
+        XCTAssertEqual(config.outputMode, .plain)
+    }
+
+    func testPlainModeDraw() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSpinner: false,
+            outputMode: .plain
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "Task [0s]")
+    }
+
+    func testPlainModeDrawWithTasks() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSpinner: false,
+            showTasks: true,
+            totalTasks: 2,
+            outputMode: .plain
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertEqual(output, "[0/2] Task [0s]")
+    }
+
+    func testPlainModeDrawWithPercent() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSpinner: false,
+            showItems: true,
+            totalItems: 2,
+            outputMode: .plain
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "Task 50% (1 of 2 it) [0s]")
+    }
+
+    func testPlainModeFinished() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSpinner: false,
+            showTasks: true,
+            totalTasks: 2,
+            clearOnFinish: false,
+            outputMode: .plain
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(tasks: 2)
+        progress.finish()
+        let output = progress.draw()
+        XCTAssertEqual(output, "[2/2] Task [0s]")
+    }
+
+    func testPlainModeWithSize() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSpinner: false,
+            showSize: true,
+            showSpeed: false,
+            totalSize: 4,
+            outputMode: .plain
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 2)
+        let output = progress.draw()
+        XCTAssertEqual(output, "Task 50% (2/4 bytes) [0s]")
+    }
+
+    func testPlainModeNoProgressBar() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSpinner: false,
+            showProgressBar: false,
+            totalItems: 2,
+            outputMode: .plain
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        let output = progress.draw()
+        XCTAssertEqual(output, "Task 50% [0s]")
+    }
+
+    func testPlainModeNoAnsiEscapes() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSpinner: false,
+            outputMode: .plain
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertFalse(output.contains("\u{001B}"))
+    }
+
+    func testPlainModeTerminalOutput() async throws {
+        let pipe = Pipe()
+        let config = try ProgressConfig(
+            terminal: pipe.fileHandleForWriting,
+            description: "Task",
+            showSpinner: false,
+            clearOnFinish: false,
+            outputMode: .plain
+        )
+        let progress = ProgressBar(config: config)
+        progress.render(force: true)
+        progress.finish()
+        try pipe.fileHandleForWriting.close()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(decoding: data, as: UTF8.self)
+        let lines = output.components(separatedBy: "\n").filter { !$0.isEmpty }
+        // Expect exactly 2 lines: one from render, one from finish
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertTrue(lines[0].contains("Task"))
+        XCTAssertTrue(lines[1].contains("Task"))
+    }
+
+    func testPlainModeTerminalOutputNoAnsiEscapes() async throws {
+        let pipe = Pipe()
+        let config = try ProgressConfig(
+            terminal: pipe.fileHandleForWriting,
+            description: "Task",
+            showSpinner: false,
+            clearOnFinish: false,
+            outputMode: .plain
+        )
+        let progress = ProgressBar(config: config)
+        progress.render(force: true)
+        progress.finish()
+        try pipe.fileHandleForWriting.close()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(decoding: data, as: UTF8.self)
+        XCTAssertFalse(output.contains("\u{001B}"))
+    }
+
+    func testPlainModeTerminalOutputUsesNewlines() async throws {
+        let pipe = Pipe()
+        let config = try ProgressConfig(
+            terminal: pipe.fileHandleForWriting,
+            description: "Task",
+            showSpinner: false,
+            clearOnFinish: false,
+            outputMode: .plain
+        )
+        let progress = ProgressBar(config: config)
+        progress.render(force: true)
+        progress.finish()
+        try pipe.fileHandleForWriting.close()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(decoding: data, as: UTF8.self)
+        // Plain mode should use newlines, not carriage returns
+        XCTAssertFalse(output.contains("\r"))
+        XCTAssertTrue(output.contains("\n"))
+    }
+
+    func testPlainModeDefaultClearOnFinishOmitsFinalLine() async throws {
+        let pipe = Pipe()
+        let config = try ProgressConfig(
+            terminal: pipe.fileHandleForWriting,
+            description: "Task",
+            showSpinner: false,
+            outputMode: .plain
+        )
+        let progress = ProgressBar(config: config)
+        progress.render(force: true)
+        progress.finish()
+        try pipe.fileHandleForWriting.close()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(decoding: data, as: UTF8.self)
+        let lines = output.components(separatedBy: "\n").filter { !$0.isEmpty }
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines.first, "Task [0s]")
+    }
+
+    func testOutputModeDefaultIsAnsi() async throws {
+        let config = try ProgressConfig(description: "Task")
+        XCTAssertEqual(config.outputMode, .ansi)
+    }
+
+    // MARK: - Color mode tests
+
+    func testColorModeConfig() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            outputMode: .color
+        )
+        XCTAssertEqual(config.outputMode, .color)
+    }
+
+    func testVisibleLengthPlainText() async throws {
+        let text = "hello"
+        XCTAssertEqual(text.visibleLength, 5)
+    }
+
+    func testVisibleLengthWithAnsiCodes() async throws {
+        let text = "\u{001B}[36mhello\u{001B}[0m"
+        XCTAssertEqual(text.visibleLength, 5)
+    }
+
+    func testVisibleLengthEmptyString() async throws {
+        XCTAssertEqual("".visibleLength, 0)
+    }
+
+    func testColorModeDraw() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            outputMode: .color
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        let stripped = output.replacingOccurrences(
+            of: "\u{001B}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression
+        )
+        XCTAssertEqual(stripped, "⠋ Task [0s]")
+    }
+
+    func testColorModeDrawContainsAnsiCodes() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            outputMode: .color
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertTrue(output.contains("\u{001B}["))
+        XCTAssertTrue(output.contains(EscapeSequence.cyan))  // spinner
+        XCTAssertTrue(output.contains(EscapeSequence.bold))  // description
+        XCTAssertTrue(output.contains(EscapeSequence.dim))  // time
+        XCTAssertTrue(output.contains(EscapeSequence.reset))  // reset
+    }
+
+    func testColorModeDrawFinished() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            outputMode: .color
+        )
+        let progress = ProgressBar(config: config)
+        progress.finish()
+        let output = progress.draw()
+        let stripped = output.replacingOccurrences(
+            of: "\u{001B}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression
+        )
+        XCTAssertEqual(stripped, "✔ Task [0s]")
+        XCTAssertTrue(output.contains(EscapeSequence.green))  // done icon
+    }
+
+    func testColorModeDrawWithTasks() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showTasks: true,
+            totalTasks: 2,
+            outputMode: .color
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        let stripped = output.replacingOccurrences(
+            of: "\u{001B}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression
+        )
+        XCTAssertEqual(stripped, "⠋ [0/2] Task [0s]")
+        XCTAssertTrue(output.contains(EscapeSequence.cyan))  // tasks
+    }
+
+    func testColorModeDrawWithPercent() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true,
+            totalItems: 2,
+            outputMode: .color
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        let output = progress.draw()
+        let stripped = output.replacingOccurrences(
+            of: "\u{001B}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression
+        )
+        XCTAssertEqual(stripped, "⠋ Task 50% (1 of 2 it) [0s]")
+        XCTAssertTrue(output.contains(EscapeSequence.yellow))  // in-progress percent
+    }
+
+    func testColorModeDrawWithPercentFinished() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showItems: true,
+            totalItems: 2,
+            outputMode: .color
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        progress.finish()
+        let output = progress.draw()
+        let stripped = output.replacingOccurrences(
+            of: "\u{001B}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression
+        )
+        XCTAssertEqual(stripped, "✔ Task 100% (2 it) [0s]")
+        XCTAssertTrue(output.contains(EscapeSequence.green))  // finished percent
+    }
+
+    func testColorModeDrawWithSize() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showSize: true,
+            showSpeed: false,
+            totalSize: 4,
+            outputMode: .color
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(size: 2)
+        let output = progress.draw()
+        let stripped = output.replacingOccurrences(
+            of: "\u{001B}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression
+        )
+        XCTAssertEqual(stripped, "⠋ Task 50% (2/4 bytes) [0s]")
+        XCTAssertTrue(output.contains(EscapeSequence.dim))  // parens content
+    }
+
+    func testColorModeDrawVisibleLengthMatchesContent() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showTasks: true,
+            showItems: true,
+            totalTasks: 2,
+            totalItems: 4,
+            outputMode: .color
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 2)
+        let colorOutput = progress.draw()
+
+        let plainConfig = try ProgressConfig(
+            description: "Task",
+            showTasks: true,
+            showItems: true,
+            totalTasks: 2,
+            totalItems: 4
+        )
+        let plainProgress = ProgressBar(config: plainConfig)
+        plainProgress.set(items: 2)
+        let plainOutput = plainProgress.draw()
+
+        XCTAssertEqual(colorOutput.visibleLength, plainOutput.count)
+    }
+
+    func testColorModeNoAnsiCodesInContent() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            outputMode: .color
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        let stripped = output.replacingOccurrences(
+            of: "\u{001B}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression
+        )
+        XCTAssertFalse(stripped.contains("\u{001B}"))
+    }
+
+    func testColorModeDrawWithProgressBar() async throws {
+        let config = try ProgressConfig(
+            description: "Task",
+            showProgressBar: true,
+            totalItems: 2,
+            width: 57,
+            outputMode: .color
+        )
+        let progress = ProgressBar(config: config)
+        progress.set(items: 1)
+        let output = progress.draw()
+        let stripped = output.replacingOccurrences(
+            of: "\u{001B}\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression
+        )
+        XCTAssertEqual(stripped, "Task 50% |██  | [0s]")
+        XCTAssertTrue(output.contains(EscapeSequence.green))
+    }
+
+    func testColorModeRequiresTTY() async throws {
+        let pipe = Pipe()
+        let config = try ProgressConfig(
+            terminal: pipe.fileHandleForWriting,
+            description: "Task",
+            outputMode: .color
+        )
+        let progress = ProgressBar(config: config)
+        // Pipe is not a TTY, so render should produce no output (same as ansi)
+        progress.render(force: true)
+        progress.finish()
+        try pipe.fileHandleForWriting.close()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        XCTAssertTrue(data.isEmpty)
+    }
+
+    func testColorModeDrawOutputContainsColorCodes() async throws {
+        // Verify draw() includes ANSI codes even without a TTY
+        // (draw is separate from terminal rendering)
+        let config = try ProgressConfig(
+            description: "Task",
+            outputMode: .color
+        )
+        let progress = ProgressBar(config: config)
+        let output = progress.draw()
+        XCTAssertTrue(output.contains(EscapeSequence.cyan))
+        XCTAssertTrue(output.contains(EscapeSequence.bold))
+        XCTAssertTrue(output.contains(EscapeSequence.dim))
+        XCTAssertTrue(output.contains(EscapeSequence.reset))
+    }
+
+    func testColorModeRenderTerminatorIsCarriageReturn() async throws {
+        // Color mode is TTY-only so we cannot capture its raw terminal output via a pipe.
+        // Instead, verify that plain mode emits \n (newlines) while color mode shares the
+        // ansi code path which emits \r (carriage returns). We confirm this by checking
+        // that plain output uses \n and that color mode is distinct from plain.
+        let plainPipe = Pipe()
+        let plainConfig = try ProgressConfig(
+            terminal: plainPipe.fileHandleForWriting,
+            description: "Task",
+            showSpinner: false,
+            clearOnFinish: false,
+            outputMode: .plain
+        )
+        let plainProgress = ProgressBar(config: plainConfig)
+        plainProgress.render(force: true)
+        plainProgress.finish()
+        try plainPipe.fileHandleForWriting.close()
+
+        let plainData = plainPipe.fileHandleForReading.readDataToEndOfFile()
+        let plainOutput = String(decoding: plainData, as: UTF8.self)
+        // Plain mode uses \n terminators
+        XCTAssertTrue(plainOutput.contains("\n"))
+        XCTAssertFalse(plainOutput.contains("\r"))
+
+        // Color mode follows the ansi path (not plain), so it uses \r
+        let colorConfig = try ProgressConfig(
+            description: "Task",
+            outputMode: .color
+        )
+        XCTAssertNotEqual(colorConfig.outputMode, .plain)
+    }
+
+    func testOutputModeDefaultIsNotColor() async throws {
+        let config = try ProgressConfig(description: "Task")
+        XCTAssertNotEqual(config.outputMode, .color)
+        XCTAssertEqual(config.outputMode, .ansi)
+    }
+}

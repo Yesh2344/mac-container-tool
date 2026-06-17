@@ -1,0 +1,93 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2026 Apple Inc. and the mac-container-tool project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
+import ContainerizationError
+import ContainerizationExtras
+import DNSServer
+import Foundation
+import SystemPackage
+import Testing
+
+@testable import ContainerAPIClient
+
+struct PacketFilterTest {
+    @Test
+    func testRedirectRuleUpdate() async throws {
+        let fm = FileManager.default
+        let tempURL = try fm.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: .temporaryDirectory,
+            create: true
+        )
+        let tempPath = FilePath(tempURL.path)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let configPath = tempPath.appending("pf.conf")
+
+        let pf = PacketFilter(configPath: configPath, anchorsPath: tempPath)
+        let from1 = try! IPAddress("203.0.113.113")
+        let domain1 = try! DNSName("aaa.com")
+        let to = try! IPAddress("127.0.0.1")
+        try pf.createRedirectRule(from: from1, to: to, domain: domain1)
+
+        let anchorPath = tempPath.appending("com.apple.mac-container-tool")
+        var actualAnchorText = try String(contentsOfFile: anchorPath.string, encoding: .utf8)
+        var expectedAnchorTest = """
+            rdr inet from any to \(from1) -> \(to) # \(domain1.pqdn)\n
+            """
+
+        #expect(actualAnchorText == expectedAnchorTest)
+
+        let from2 = try! IPAddress("172.31.72.1")
+        let domain2 = try! DNSName("bbb.com")
+        try pf.createRedirectRule(from: from2, to: to, domain: domain2)
+
+        actualAnchorText = try String(contentsOfFile: anchorPath.string, encoding: .utf8)
+        expectedAnchorTest += """
+            rdr inet from any to \(from2) -> \(to) # \(domain2.pqdn)\n
+            """
+        #expect(actualAnchorText == expectedAnchorTest)
+
+        let actualConfigText = try String(contentsOfFile: configPath.string, encoding: .utf8)
+        let expectedConfigText = try Regex(
+            #"""
+            scrub-anchor "([^"]+)"
+            nat-anchor "([^"]+)"
+            rdr-anchor "([^"]+)"
+            dummynet-anchor "([^"]+)"
+            anchor "([^"]+)"
+            load anchor "([^"]+)" from "[^"]+"
+            """#
+        )
+
+        #expect(actualConfigText.contains(expectedConfigText))
+
+        try pf.removeRedirectRule(from: from1, to: to, domain: domain1)
+        try pf.removeRedirectRule(from: from2, to: to, domain: domain2)
+
+        #expect(!fm.fileExists(atPath: anchorPath.string))
+        let configText = try String(contentsOfFile: configPath.string, encoding: .utf8)
+        #expect(configText == "")
+    }
+
+    @Test
+    func testPacketFilterReinitialize() async throws {
+        let pf = PacketFilter()
+        #expect(throws: ContainerizationError.self) {
+            try pf.reinitialize()
+        }
+    }
+}

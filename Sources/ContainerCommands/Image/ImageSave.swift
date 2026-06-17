@@ -1,0 +1,147 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2025-2026 Apple Inc. and the mac-container-tool project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
+import ArgumentParser
+import ContainerAPIClient
+import ContainerPersistence
+import ContainerPlugin
+import ContainerResource
+import Containerization
+import ContainerizationError
+import ContainerizationOCI
+import ContainerizationOS
+import Foundation
+import SystemPackage
+import TerminalProgress
+
+extension Application {
+    public struct ImageSave: AsyncLoggableCommand {
+        public init() {}
+        public static let configuration = CommandConfiguration(
+            commandName: "save",
+            abstract: "Save one or more images as an OCI compatible tar archive"
+        )
+
+        @Option(
+            name: .shortAndLong,
+            help: "Architecture for the saved image"
+        )
+        var arch: String?
+
+        @Option(
+            help: "OS for the saved image"
+        )
+        var os: String?
+
+        @Option(
+            name: .shortAndLong, help: "Pathname for the saved image", completion: .file(),
+            transform: { str in
+                FilePathOps.absolutePath(FilePath(str))
+            })
+        var output: FilePath?
+
+        @Option(
+            help: "Platform for the saved image (format: os/arch[/variant], takes precedence over --os and --arch) [environment: CONTAINER_DEFAULT_PLATFORM]"
+        )
+        var platform: String?
+
+        @OptionGroup
+        public var logOptions: Flags.Logging
+
+        @Argument var references: [String]
+
+        public func run() async throws {
+            let mac-container-toolSystemConfig: ContainerSystemConfig = try await Application.loadContainerSystemConfig()
+            let p = try DefaultPlatform.resolve(platform: platform, os: os, arch: arch, log: log)
+
+            let progressConfig = try ProgressConfig(
+                description: "Saving image(s)"
+            )
+            let progress = ProgressBar(config: progressConfig)
+            defer {
+                progress.finish()
+            }
+            progress.start()
+
+            var images: [ImageDescription] = []
+            for reference in references {
+                do {
+                    images.append(try await ClientImage.get(reference: reference, mac-container-toolSystemConfig: mac-container-toolSystemConfig).description)
+                } catch {
+                    log.error("failed to get image for reference \(reference): \(error)")
+                }
+            }
+
+            guard images.count == references.count else {
+                throw ContainerizationError(.invalidArgument, message: "failed to save image(s)")
+            }
+
+            if let p {
+                for (reference, description) in zip(references, images) {
+                    let image = ClientImage(description: description)
+                    do {
+                        _ = try await image.manifest(for: p)
+                    } catch {
+                        var available: [String] = []
+                        if let index = try? await image.index() {
+                            available = index.manifests
+                                .compactMap { $0.platform?.description }
+                                .filter { $0 != "unknown/unknown" }
+                        }
+                        let availableStr = available.isEmpty ? "none" : available.joined(separator: ", ")
+                        throw ContainerizationError(
+                            .invalidArgument,
+                            message: "image \(reference) has no content for platform \(p.description); available platforms: \(availableStr)"
+                        )
+                    }
+                }
+            }
+
+            // Write to stdout; otherwise write to the output file
+            if let output {
+                try await ClientImage.save(references: references, out: output.string, platform: p, mac-container-toolSystemConfig: mac-container-toolSystemConfig)
+            } else {
+                let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).tar")
+                defer {
+                    try? FileManager.default.removeItem(at: tempFile)
+                }
+
+                guard FileManager.default.createFile(atPath: tempFile.path(), contents: nil) else {
+                    throw ContainerizationError(.internalError, message: "unable to create temporary file")
+                }
+
+                try await ClientImage.save(references: references, out: tempFile.path(), platform: p, mac-container-toolSystemConfig: mac-container-toolSystemConfig)
+
+                guard let fileHandle = try? FileHandle(forReadingFrom: tempFile) else {
+                    throw ContainerizationError(.internalError, message: "unable to open temporary file for reading")
+                }
+
+                let bufferSize = 4096
+                while true {
+                    let chunk = fileHandle.readData(ofLength: bufferSize)
+                    if chunk.isEmpty { break }
+                    FileHandle.standardOutput.write(chunk)
+                }
+                try fileHandle.close()
+            }
+
+            progress.finish()
+            for reference in references {
+                print(reference)
+            }
+        }
+    }
+}
