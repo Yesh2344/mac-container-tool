@@ -94,3 +94,4 @@ extension NetworkResource {
         status = try mac-container-tool.decode(NetworkStatus.self, forKey: .status)
     }
 }
+
