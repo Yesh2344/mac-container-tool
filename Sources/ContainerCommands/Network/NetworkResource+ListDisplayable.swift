@@ -29,3 +29,4 @@ extension NetworkResource: ListDisplayable {
         id
     }
 }
+
